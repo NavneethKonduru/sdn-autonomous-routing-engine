@@ -1,0 +1,13 @@
+# Requirements for SDN-Wireless-5G Networking Project
+# Core dependencies
+pyyaml>=5.4.1
+
+# Optional dependencies for enhanced functionality
+# scapy>=2.4.5  # For packet manipulation
+# numpy>=1.21.0  # For numerical computations
+# matplotlib>=3.4.0  # For plotting (if needed for visualizations)
+
+# For development
+pytest>=6.2.4
+black>=21.0
+flake8>=3.9.0

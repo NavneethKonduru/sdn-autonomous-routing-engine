@@ -1,0 +1,52 @@
+# SDN Emphasis Configuration
+# Use this configuration to emphasize Software Defined Networks aspects
+
+sdn:
+  enabled: true
+  controller:
+    id: "main-controller"
+    protocol: "OpenFlow 1.3"
+    capabilities:
+      - packet_in
+      - flow_mod
+      - port_status
+      - stats_request
+
+  switches:
+    - id: "s1"
+      type: "openflow"
+      ports: 4
+    - id: "s2"
+      type: "openflow"
+      ports: 4
+    - id: "s3"
+      type: "openflow"
+      ports: 4
+
+  topology:
+    type: "linear"
+    links:
+      - [s1, s2]
+      - [s2, s3]
+
+  applications:
+    - name: "traffic_engineering"
+      enabled: true
+    - name: "network_virtualization"
+      enabled: true
+    - name: "security_policies"
+      enabled: false
+
+  reporting_emphasis:
+    - "controller_data_plane_separation"
+    - "openflow_protocol"
+    - "flow_table_programmability"
+    - "network_centralized_control"
+    - "network_visibility_telemetry"
+    - "policy_based_management"
+
+wireless:
+  enabled: false
+
+_5g:
+  enabled: false
