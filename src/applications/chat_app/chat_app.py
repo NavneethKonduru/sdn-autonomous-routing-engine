@@ -107,7 +107,8 @@ class NetworkingApp:
             if 'sdn' in self.modules and self.modules['sdn'].is_active:
                 self.modules['sdn'].simulate_chat_routing(
                     src_user=message.username,
-                    msg_type=message.type.name
+                    msg_type=message.type.name,
+                    content=message.content
                 )
             if 'wireless' in self.modules and self.modules['wireless'].is_active:
                 self.modules['wireless'].simulate_wireless_transmission(

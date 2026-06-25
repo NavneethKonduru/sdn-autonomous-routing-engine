@@ -198,17 +198,47 @@ class SDNModule:
         logger.info("Sample SDN topology created")
         return self.controller
 
-    def simulate_chat_routing(self, src_user: str, msg_type: str):
+    def simulate_chat_routing(self, src_user: str, msg_type: str, content: str = ""):
         """Simulate routing a chat message through the SDN topology"""
         if not self.controller or not self.is_active:
             return
 
+        if not hasattr(self.controller, 'blocked_users'):
+            self.controller.blocked_users = set()
+
         print(f"\n=======================================================")
+        if content.startswith("/linkdown "):
+            node = content.split(" ")[1]
+            print(f"[SDN CONTROLLER] -> ALARM: Link Failure detected at switch '{node}' (PORT_STATUS: DOWN)!")
+            # Modify topology dynamically (bypass the failed node via s4)
+            for s in self.controller.network_topology.values():
+                s.discard(node)
+            self.controller.network_topology["s1"].add("s4")
+            self.controller.network_topology["s4"] = {"s1", "s3"}
+            self.controller.network_topology["s3"].add("s4")
+            print(f"[SDN CONTROLLER] -> Spanning Tree Protocol disabled. SDN autonomously routing around failure via s4...")
+            print(f"=======================================================\n")
+            return
+            
+        if content.startswith("/block_user "):
+            target = content.split(" ")[1]
+            self.controller.blocked_users.add(target)
+            print(f"[SDN FIREWALL] -> Security Policy updated: Pushing DROP rule for User '{target}' to edge switch s1.")
+            print(f"=======================================================\n")
+            return
+            
+        if src_user in self.controller.blocked_users:
+            print(f"[SDN FIREWALL] Intercepted {msg_type} from blocked user '{src_user}'")
+            print(f"[OPENFLOW] Switch s1: Match [APP_SRC={src_user}] -> Action [DROP]")
+            print(f"[SDN DATA PLANE] Packet dropped at edge.")
+            print(f"=======================================================\n")
+            return
+
         print(f"[SDN CONTROLLER] Intercepted {msg_type} from '{src_user}'")
         print(f"[SDN CONTROLLER] -> PACKET_IN received from edge switch.")
         
         # Determine path
-        path = self.controller.calculate_shortest_path("s1", "s3") # Simplified fixed path for demo
+        path = self.controller.calculate_shortest_path("s1", "s3") # Calculates via BFS
         path_str = " -> ".join(path)
         print(f"[SDN CONTROLLER] -> Calculating optimal path... Found: {path_str}")
         
