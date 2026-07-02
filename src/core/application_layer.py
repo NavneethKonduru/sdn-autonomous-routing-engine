@@ -106,9 +106,13 @@ class ChatServer:
             self._handle_client_data(data, client_ip, client_port, tcp_sock)
 
         self.transport.register_handler(self.port, lambda p: None)  # Placeholder
-        self.transport.start_listener(self.port, client_handler)
-        self.running = True
-        logger.info(f"Chat server started on port {self.port}")
+        actual_port = self.transport.start_listener(self.port, client_handler)
+        if actual_port != -1:
+            self.port = actual_port
+            self.running = True
+            logger.info(f"Chat server started on port {self.port}")
+        else:
+            logger.error("Failed to start chat server: No available ports")
 
     def _handle_client_data(self, data: bytes, client_ip: str, client_port: int, tcp_sock=None):
         """Handle incoming data from a client"""
@@ -186,6 +190,8 @@ class ChatServer:
             "Server",
             ",".join(self.users.keys())
         )
+        if self.on_message_broadcast:
+            self.on_message_broadcast(user_list)
         # In real implementation, we'd send this to specific user
         logger.info(f"User list for {username}: {user_list.content}")
 
@@ -236,7 +242,7 @@ class ChatClient:
                     msg_len = struct.unpack('!I', buffer[:4])[0]
                     if len(buffer) < 4 + msg_len:
                         break
-                    msg_data = buffer[4:4+msg_len]
+                    msg_data = buffer[:4+msg_len]
                     buffer = buffer[4+msg_len:]
 
                     message = ChatProtocol.decode_message(msg_data)

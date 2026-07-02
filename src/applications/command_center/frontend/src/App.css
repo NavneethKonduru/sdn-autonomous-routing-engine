@@ -1,0 +1,10 @@
+/* Deleted default styles to use index.css */
+
+.app-container {
+  display: grid;
+  grid-template-columns: 280px 1fr 1fr 300px;
+  gap: 15px;
+  height: 100vh;
+  padding: 15px;
+  box-sizing: border-box;
+}

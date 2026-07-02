@@ -68,20 +68,36 @@ class TransportLayer:
             logger.error(f"Failed to send segment: {e}")
             return False
 
-    def start_listener(self, port: int, handler: Callable[[bytes, str, int], None]):
-        """Start listening for incoming connections on a port"""
-        def listener():
-            sock = self.network.create_socket(ProtocolType.TCP)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            local_ip = self.network.get_local_ip()
-            # Use 127.0.0.1 for actual OS socket binding to avoid OSError
-            sock.bind(('127.0.0.1', port))
-            sock.listen(5)
-            logger.info(f"Listening on {local_ip}:{port}")
+    def start_listener(self, port: int, handler: Callable[[bytes, str, int], None]) -> int:
+        """Start listening for incoming connections on a port, falling back to next available port if occupied."""
+        sock = self.network.create_socket(ProtocolType.TCP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        local_ip = self.network.get_local_ip()
+        
+        current_port = port
+        max_attempts = 100
+        for i in range(max_attempts):
+            try:
+                # Use 127.0.0.1 for actual OS socket binding to avoid OSError
+                sock.bind(('127.0.0.1', current_port))
+                break
+            except OSError as e:
+                # 48: Mac, 98: Linux, 10048: Windows
+                if getattr(e, 'errno', None) in (48, 98, 10048):
+                    current_port += 1
+                else:
+                    raise e
+        else:
+            logger.error(f"Could not bind to any port in range {port}-{port+max_attempts-1}")
+            return -1
 
+        sock.listen(5)
+        logger.info(f"Listening on {local_ip}:{current_port}")
+
+        def listener(bound_sock):
             while True:
                 try:
-                    conn, addr = sock.accept()
+                    conn, addr = bound_sock.accept()
                     logger.info(f"Accepted connection from {addr}")
                     # Handle connection in separate thread
                     threading.Thread(
@@ -92,7 +108,8 @@ class TransportLayer:
                 except Exception as e:
                     logger.error(f"Listener error: {e}")
 
-        threading.Thread(target=listener, daemon=True).start()
+        threading.Thread(target=listener, args=(sock,), daemon=True).start()
+        return current_port
 
     def _handle_tcp_connection(self, conn: socket.socket, addr: Tuple,
                               handler: Callable):

@@ -23,6 +23,8 @@ from src.core.network_layer import NetworkLayer
 from src.core.transport_layer import TransportLayer
 from src.core.application_layer import ChatServer, ChatClient, ChatMessage, MessageType
 from src.modules.sdn.sdn_module import SDNModule
+from src.modules.wireless.wireless_module import WirelessModule
+from src.modules._5g._5g_module import _5gModule
 
 
 class NetworkingApp:
@@ -99,27 +101,44 @@ class NetworkingApp:
         self.chat_server.on_message_broadcast = self._simulate_routing
             
         self.chat_server.start()
-        print(f"Chat server started on port {port}")
+        print(f"Chat server started on port {self.chat_server.port}")
 
     def _simulate_routing(self, message: ChatMessage):
         """Callback to trigger visual routing simulation when a message is sent"""
-        if message.type != MessageType.USER_LIST:  # Ignore background system messages
+        if message.type == MessageType.USER_LIST:
+            # Dynamically map new users to the topology
             if 'sdn' in self.modules and self.modules['sdn'].is_active:
-                self.modules['sdn'].simulate_chat_routing(
-                    src_user=message.username,
-                    msg_type=message.type.name,
-                    content=message.content
-                )
-            if 'wireless' in self.modules and self.modules['wireless'].is_active:
-                self.modules['wireless'].simulate_wireless_transmission(
-                    src_user=message.username,
-                    msg_type=message.type.name
-                )
-            if '_5g' in self.modules and self.modules['_5g'].is_active:
-                self.modules['_5g'].simulate_5g_transmission(
-                    src_user=message.username,
-                    msg_type=message.type.name
-                )
+                users = message.content.split(',')
+                for user in users:
+                    if user.strip():
+                        self.modules['sdn'].controller.register_user_to_switch(user.strip())
+            return
+            
+        if 'sdn' in self.modules and self.modules['sdn'].is_active:
+            # Determine destination (broadcast or specific)
+            dst_user = "broadcast"
+            # For this demo, let's just pick another active user if possible, or broadcast
+            active_users = [u for u in self.chat_server.users.keys() if u != message.username]
+            if active_users:
+                dst_user = active_users[0] # Route to the first other user found
+                
+            self.modules['sdn'].simulate_chat_routing(
+                src_user=message.username,
+                msg_type=message.type.name,
+                dst_user=dst_user
+            )
+            
+        if 'wireless' in self.modules and self.modules['wireless'].is_active:
+            self.modules['wireless'].simulate_wireless_transmission(
+                src_user=message.username,
+                msg_type=message.type.name
+            )
+            
+        if '_5g' in self.modules and self.modules['_5g'].is_active:
+            self.modules['_5g'].simulate_5g_transmission(
+                src_user=message.username,
+                msg_type=message.type.name
+            )
 
     def start_client(self, username: str):
         """Start the chat client"""
@@ -193,6 +212,9 @@ class NetworkingApp:
         print("Commands:")
         print("  /help - Show this help")
         print("  /status - Show application status")
+        print("  /traffic <src> <dst> <level> - Congest a link (e.g., /traffic s1 s2 20)")
+        print("  /sever <src> <dst> - Break a link (e.g., /sever s1 s2)")
+        print("  /ban <user> - Block a user via firewall")
         print("  /msg <text> - Send a chat message")
         print("  /quit - Exit the application")
         print()
@@ -207,10 +229,39 @@ class NetworkingApp:
                     print("Commands:")
                     print("  /help - Show this help")
                     print("  /status - Show application status")
+                    print("  /traffic <src> <dst> <level> - Congest a link")
+                    print("  /sever <src> <dst> - Break a link")
+                    print("  /ban <user> - Block a user via firewall")
                     print("  /msg <text> - Send a chat message")
                     print("  /quit - Exit the application")
                 elif user_input == "/status":
                     self.print_status()
+                elif user_input.startswith("/traffic "):
+                    parts = user_input.split()
+                    if len(parts) == 4 and 'sdn' in self.modules and self.modules['sdn'].is_active:
+                        src, dst, weight = parts[1], parts[2], int(parts[3])
+                        if self.modules['sdn'].set_link_weight(src, dst, weight):
+                            print(f"[NETWORK ADMIN] Link {src}-{dst} traffic level set to {weight}")
+                        else:
+                            print(f"[NETWORK ADMIN] Failed to update link {src}-{dst}")
+                    else:
+                        print("Usage: /traffic <src> <dst> <level> (Requires Server Mode / Local SDN)")
+                elif user_input.startswith("/sever "):
+                    parts = user_input.split()
+                    if len(parts) == 3 and 'sdn' in self.modules and self.modules['sdn'].is_active:
+                        src, dst = parts[1], parts[2]
+                        if self.modules['sdn'].break_link(src, dst):
+                            print(f"[NETWORK ADMIN] Severed link {src}-{dst}")
+                    else:
+                        print("Usage: /sever <src> <dst> (Requires Server Mode / Local SDN)")
+                elif user_input.startswith("/ban "):
+                    parts = user_input.split()
+                    if len(parts) == 2 and 'sdn' in self.modules and self.modules['sdn'].is_active:
+                        user = parts[1]
+                        if self.modules['sdn'].ban_user(user):
+                            print(f"[NETWORK ADMIN] Firewall ban toggled for {user}")
+                    else:
+                        print("Usage: /ban <user> (Requires Server Mode / Local SDN)")
                 elif user_input.startswith("/msg "):
                     message = user_input[5:]
                     if message:
@@ -242,10 +293,16 @@ def main():
     parser.add_argument('--server', '-s', action='store_true', help='Run as server')
     parser.add_argument('--client', '-cl', type=str, help='Run as client with username')
     parser.add_argument('--interactive', '-i', action='store_true', help='Run in interactive mode')
+    parser.add_argument('--port', '-p', type=int, default=8888, help='Port to run server on or connect to')
 
     args = parser.parse_args()
 
-    app = NetworkingApp(args.config or 'configs/sdn_config.yaml')
+    app = NetworkingApp(args.config)
+    
+    # Override port if provided
+    if 'chat' not in app.config:
+        app.config['chat'] = {}
+    app.config['chat']['server_port'] = args.port
 
     if args.server:
         app.start_server()
